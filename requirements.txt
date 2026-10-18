@@ -15,7 +15,6 @@ modelscope>=1.13.0
 # pandas>=2.0.0
 json5>=0.9.16
 munch>=4.0.0
-descript-audiotools
 einops
 ffmpy
 docstring-parser
