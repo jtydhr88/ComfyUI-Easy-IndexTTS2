@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 from transformers.utils import add_start_docstrings
-from transformers.generation.beam_constraints import Constraint, ConstraintListState
+from indextts.gpt._tf4.beam_constraints import Constraint, ConstraintListState
 
 
 PROCESS_INPUTS_DOCSTRING = r"""

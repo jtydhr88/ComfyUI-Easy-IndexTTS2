@@ -1,3 +1,6 @@
 from . import layers
-from . import loss
+try:
+    from . import loss
+except ImportError:
+    pass
 from . import quantize

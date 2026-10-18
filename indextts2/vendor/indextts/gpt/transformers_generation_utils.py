@@ -25,30 +25,18 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn import functional as F
 
-try:
-    from transformers.cache_utils import (
-        Cache,
-        DynamicCache,
-        EncoderDecoderCache,
-        OffloadedCache,
-        QuantizedCacheConfig,
-        StaticCache,
-    )
-except Exception:
-    from transformers.cache_utils import (
-        Cache,
-        DynamicCache,
-        EncoderDecoderCache,
-        OffloadedCache,
-        QuantoQuantizedCache as QuantizedCacheConfig,
-        StaticCache,
-    )
+from transformers.cache_utils import (
+    Cache,
+    DynamicCache,
+    EncoderDecoderCache,
+    StaticCache,
+)
+from indextts.gpt._tf4.helpers import OffloadedCache, QuantizedCacheConfig
 from transformers.configuration_utils import PretrainedConfig
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.integrations.fsdp import is_fsdp_managed_module
 from transformers.modeling_outputs import CausalLMOutputWithPast, Seq2SeqLMOutput
-from transformers.pytorch_utils import isin_mps_friendly
-from transformers.tokenization_utils import ExtensionsTrie
+from indextts.gpt._tf4.helpers import isin_mps_friendly, ExtensionsTrie, HammingDiversityLogitsProcessor, fill_generation_defaults
 from transformers.utils import (
     ModelOutput,
     is_accelerate_available,
@@ -58,8 +46,8 @@ from transformers.utils import (
     is_torchdynamo_compiling,
     logging,
 )
-from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
-from transformers.generation.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
+from indextts.gpt._tf4.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
+from indextts.gpt._tf4.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
 try:
     from transformers.generation.candidate_generator import (
         AssistedCandidateGenerator,
@@ -114,7 +102,6 @@ from transformers.generation.logits_process import (
     ExponentialDecayLengthPenalty,
     ForcedBOSTokenLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
-    HammingDiversityLogitsProcessor,
     InfNanRemoveLogitsProcessor,
     LogitNormalization,
     LogitsProcessorList,
@@ -1528,6 +1515,7 @@ class GenerationMixin:
                 not is_torchdynamo_compiling()
                 and self.generation_config._from_model_config  # 1)
                 and self.generation_config._original_object_hash == hash(self.generation_config)  # 2)
+                and hasattr(self.config, "_get_non_default_generation_parameters")  # removed in transformers>=5
                 and len(self.config._get_non_default_generation_parameters()) > 0  # 3)
             ):
                 new_generation_config = GenerationConfig.from_model_config(self.config)
@@ -1550,6 +1538,7 @@ class GenerationMixin:
         if not is_torchdynamo_compiling():
             generation_config = copy.deepcopy(generation_config)
             model_kwargs = generation_config.update(**kwargs)
+            fill_generation_defaults(generation_config)
             # If `generation_config` is provided, let's fallback ALL special tokens to the default values for the model
             if not using_model_generation_config:
                 if generation_config.bos_token_id is None:
@@ -2398,7 +2387,7 @@ class GenerationMixin:
 
         # Convert to legacy cache format if requested
         if (
-            generation_config.return_legacy_cache is not False  # Should check for `True` after v4.47
+            getattr(generation_config, "return_legacy_cache", None) is not False  # Should check for `True` after v4.47
             and not is_torchdynamo_compiling()
             and hasattr(result, "past_key_values")
             and hasattr(result.past_key_values, "to_legacy_cache")
